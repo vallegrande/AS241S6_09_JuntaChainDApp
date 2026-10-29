@@ -1,0 +1,16 @@
+services:
+  juntachain:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
+      DATABASE_PATH: /app/data/juntachain.sqlite
+      ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
+      SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL:-}
+      HOODI_RPC_URL: ${HOODI_RPC_URL:-}
+    volumes:
+      - juntachain-data:/app/data
+    restart: unless-stopped
+volumes:
+  juntachain-data:
