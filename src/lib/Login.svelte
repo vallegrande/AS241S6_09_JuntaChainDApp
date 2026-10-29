@@ -74,7 +74,7 @@
   </section>
   <section class="access">
     <div class="top-note">
-      <span class="live-dot"></span>SEPOLIA & HOODI
+      <span class="live-dot"></span>SEPOLIA · HOODI · zkSYS
       <span class="network-tag">TESTNET</span>
     </div>
     <div class="login-card">

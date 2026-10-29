@@ -6,22 +6,108 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { parseEther } from "viem";
 const fixtures = new Map();
-const rpc = createServer(async (req,res)=>{
- let text='';for await(const chunk of req)text+=chunk;
- const input=JSON.parse(text);
- const run=(call)=>{
-  const fixture=fixtures.get(call.params?.[0]);let result=null;
-  if(call.method==='eth_getTransactionByHash')result=fixture?.tx||null;
-  if(call.method==='eth_getTransactionReceipt')result=fixture?.receipt||null;
-  if(call.method==='eth_getBlockByNumber')result={number:'0x1',hash:'0x'+'11'.repeat(32),parentHash:'0x'+'00'.repeat(32),timestamp:'0x'+Math.floor(Date.now()/1000+60).toString(16),transactions:[],gasLimit:'0x1c9c380',gasUsed:'0x5208',baseFeePerGas:'0x1',extraData:'0x',difficulty:'0x0',size:'0x1',uncles:[]};
-  return {jsonrpc:'2.0',id:call.id,result};
- };res.setHeader('content-type','application/json');res.end(JSON.stringify(Array.isArray(input)?input.map(run):run(input)));
+const rpc = createServer(async (req, res) => {
+  let text = "";
+  for await (const chunk of req) text += chunk;
+  if (req.url.includes("/api/v2/addresses/")) {
+    const id = req.url.startsWith("/zksys/")
+      ? 57057
+      : req.url.startsWith("/hoodi/")
+        ? 560048
+        : 11155111;
+    res.setHeader("content-type", "application/json");
+    res.end(
+      JSON.stringify({
+        items: [
+          {
+            hash: "0x" + id.toString(16).padStart(64, "0"),
+            from: { hash: "0x" + "01".repeat(20) },
+            to: { hash: "0x" + "02".repeat(20) },
+            value: "1000000000000000",
+            timestamp: "2026-10-29T00:00:00Z",
+            status: "ok",
+          },
+        ],
+        next_page_params: null,
+      }),
+    );
+    return;
+  }
+  const input = JSON.parse(text);
+  const run = (call) => {
+    const fixture = fixtures.get(call.params?.[0]);
+    let result = null;
+    if (call.method === "eth_chainId")
+      result = req.url.includes("/rpc/zksys")
+        ? "0xdee1"
+        : req.url.includes("/rpc/hoodi")
+          ? "0x88bb0"
+          : "0xaa36a7";
+    if (call.method === "eth_getTransactionByHash")
+      result = fixture?.tx || null;
+    if (call.method === "eth_getTransactionReceipt")
+      result = fixture?.receipt || null;
+    if (call.method === "eth_getBlockByNumber")
+      result = {
+        number: "0x1",
+        hash: "0x" + "11".repeat(32),
+        parentHash: "0x" + "00".repeat(32),
+        timestamp: "0x" + Math.floor(Date.now() / 1000 + 60).toString(16),
+        transactions: [],
+        gasLimit: "0x1c9c380",
+        gasUsed: "0x5208",
+        baseFeePerGas: "0x1",
+        extraData: "0x",
+        difficulty: "0x0",
+        size: "0x1",
+        uncles: [],
+      };
+    return { jsonrpc: "2.0", id: call.id, result };
+  };
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify(Array.isArray(input) ? input.map(run) : run(input)));
 });
-await new Promise(resolve=>rpc.listen(4182,'127.0.0.1',resolve));
-function transaction(from,to,value,index,success=true){
- const hash='0x'+index.toString(16).padStart(64,'0');
- const tx={hash,from,to,value:'0x'+parseEther(value).toString(16),blockHash:'0x'+'11'.repeat(32),blockNumber:'0x1',transactionIndex:'0x0',gas:'0x5208',gasPrice:'0x1',input:'0x',nonce:'0x0',type:'0x0',chainId:'0xaa36a7',v:'0x1b',r:'0x'+'01'.repeat(32),s:'0x'+'02'.repeat(32)};
- fixtures.set(hash,{tx,receipt:{transactionHash:hash,from,to,blockHash:tx.blockHash,blockNumber:'0x1',transactionIndex:'0x0',gasUsed:'0x5208',cumulativeGasUsed:'0x5208',effectiveGasPrice:'0x1',status:success?'0x1':'0x0',type:'0x0',logs:[],logsBloom:'0x'+'00'.repeat(256),contractAddress:null}});return hash;
+await new Promise((resolve) => rpc.listen(4182, "127.0.0.1", resolve));
+function transaction(from, to, value, index, success = true) {
+  const hash = "0x" + index.toString(16).padStart(64, "0");
+  const tx = {
+    hash,
+    from,
+    to,
+    value: "0x" + parseEther(value).toString(16),
+    blockHash: "0x" + "11".repeat(32),
+    blockNumber: "0x1",
+    transactionIndex: "0x0",
+    gas: "0x5208",
+    gasPrice: "0x1",
+    input: "0x",
+    nonce: "0x0",
+    type: "0x0",
+    chainId: "0xaa36a7",
+    v: "0x1b",
+    r: "0x" + "01".repeat(32),
+    s: "0x" + "02".repeat(32),
+  };
+  fixtures.set(hash, {
+    tx,
+    receipt: {
+      transactionHash: hash,
+      from,
+      to,
+      blockHash: tx.blockHash,
+      blockNumber: "0x1",
+      transactionIndex: "0x0",
+      gasUsed: "0x5208",
+      cumulativeGasUsed: "0x5208",
+      effectiveGasPrice: "0x1",
+      status: success ? "0x1" : "0x0",
+      type: "0x0",
+      logs: [],
+      logsBloom: "0x" + "00".repeat(256),
+      contractAddress: null,
+    },
+  });
+  return hash;
 }
 const base = "http://127.0.0.1:4181";
 const directory = resolve("work");
@@ -36,7 +122,15 @@ async function start() {
       HOST: "127.0.0.1",
       ORIGIN: base,
       DATABASE_PATH: database,
-      SEPOLIA_RPC_URL:'http://127.0.0.1:4182',
+      SEPOLIA_RPC_URL: "http://127.0.0.1:4182/rpc/sepolia",
+      HOODI_RPC_URL: "http://127.0.0.1:4182/rpc/hoodi",
+      ZKSYS_RPC_URL: "http://127.0.0.1:4182/rpc/zksys",
+      TURSO_DATABASE_URL: "",
+      TURSO_AUTH_TOKEN: "",
+      RENDER: "false",
+      SEPOLIA_HISTORY_URL: "http://127.0.0.1:4182/sepolia",
+      HOODI_HISTORY_URL: "http://127.0.0.1:4182/hoodi",
+      ZKSYS_HISTORY_URL: "http://127.0.0.1:4182/zksys",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -188,26 +282,97 @@ try {
     "Sesión muestra solo sus juntas",
     (await charlie("session")).data.groups.length === 0,
   );
-  const wrongAmount=transaction(b.address,a.address,'0.002',1);
-  check('Monto diferente al pactado rechazado',(await bob('payment',{id,hash:wrongAmount})).status===422);
-  const failedTx=transaction(b.address,a.address,'0.001',2,false);
-  check('Transacción revertida rechazada',(await bob('payment',{id,hash:failedTx})).status===422);
-  const wrongRecipient=transaction(b.address,c.address,'0.001',3);
-  check('Beneficiario incorrecto rechazado',(await bob('payment',{id,hash:wrongRecipient})).status===422);
-  const validTx=transaction(b.address,a.address,'0.001',4);
-  const payment=await bob('payment',{id,hash:validTx});
-  check('Aporte válido registrado y ronda avanza',payment.status===200&&payment.data.round===1&&payment.data.payments.length===1);
-  const secondTx=transaction(a.address,b.address,'0.001',5);
-  const final=await alice('payment',{id,hash:secondTx});
-  check('Junta finaliza cuando todos cobran',final.status===200&&final.data.round===2&&final.data.payments.length===2);
-  check('No acepta aportes tras finalizar',(await bob('payment',{id,hash:validTx})).status===409);
+  const wrongAmount = transaction(b.address, a.address, "0.002", 1);
+  check(
+    "Monto diferente al pactado rechazado",
+    (await bob("payment", { id, hash: wrongAmount })).status === 422,
+  );
+  const failedTx = transaction(b.address, a.address, "0.001", 2, false);
+  check(
+    "Transacción revertida rechazada",
+    (await bob("payment", { id, hash: failedTx })).status === 422,
+  );
+  const wrongRecipient = transaction(b.address, c.address, "0.001", 3);
+  check(
+    "Beneficiario incorrecto rechazado",
+    (await bob("payment", { id, hash: wrongRecipient })).status === 422,
+  );
+  const validTx = transaction(b.address, a.address, "0.001", 4);
+  const payment = await bob("payment", { id, hash: validTx });
+  check(
+    "Aporte válido registrado y ronda avanza",
+    payment.status === 200 &&
+      payment.data.round === 1 &&
+      payment.data.payments.length === 1,
+  );
+  const secondTx = transaction(a.address, b.address, "0.001", 5);
+  const final = await alice("payment", { id, hash: secondTx });
+  check(
+    "Junta finaliza cuando todos cobran",
+    final.status === 200 &&
+      final.data.round === 2 &&
+      final.data.payments.length === 2,
+  );
+  check(
+    "No acepta aportes tras finalizar",
+    (await bob("payment", { id, hash: validTx })).status === 409,
+  );
+  for (const chainId of [11155111, 560048, 57057]) {
+    const history = await visitor(
+      "history?address=" + a.address + "&chainId=" + chainId,
+    );
+    check(
+      "Historial aislado por red " + chainId,
+      history.status === 200 &&
+        history.data.items[0].hash ===
+          "0x" + chainId.toString(16).padStart(64, "0"),
+    );
+  }
+  const zk = await alice("groups", {
+    name: "Junta zkSYS QA",
+    capacity: 2,
+    frequency: 7,
+    chainId: 57057,
+    amount: "0.001",
+  });
+  check(
+    "Junta zkSYS disponible",
+    zk.status === 201 && zk.data.chainId === 57057,
+  );
+  await bob("join", { id: zk.data.id });
+  const zkHash = transaction(b.address, a.address, "0.001", 11);
+  check(
+    "Aporte zkSYS verificado en su RPC",
+    (await bob("payment", { id: zk.data.id, hash: zkHash })).status === 200,
+  );
+  const health = await visitor("health");
+  check(
+    "Healthcheck y catálogo de tres redes",
+    health.status === 200 && health.data.networks.length === 3,
+  );
+  const concurrent = await alice("groups", {
+    name: "Junta concurrente",
+    capacity: 2,
+    frequency: 7,
+    chainId: 560048,
+    amount: "0.001",
+  });
+  const joins = await Promise.all([
+    bob("join", { id: concurrent.data.id }),
+    charlie("join", { id: concurrent.data.id }),
+  ]);
+  check(
+    "Inscripciones concurrentes respetan cupos",
+    joins.filter((r) => r.status === 200).length === 1 &&
+      joins.filter((r) => r.status === 409).length === 1,
+  );
   await stop();
   await start();
   const restored = await alice("session");
   check(
     "Perfil y juntas sobreviven reinicio",
     restored.data.name === "Participante QA" &&
-      restored.data.groups[0].id === id,
+      restored.data.groups.some((g) => g.id === id),
   );
   check(
     "Logout revoca sesión",
@@ -223,5 +388,5 @@ try {
   );
 } finally {
   await stop();
-  await new Promise(resolve=>rpc.close(resolve));
+  await new Promise((resolve) => rpc.close(resolve));
 }

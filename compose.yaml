@@ -5,6 +5,9 @@ services:
       - "3000:3000"
     environment:
       ORIGIN: ${ORIGIN:-http://localhost:3000}
+      TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
+      TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
+      ZKSYS_RPC_URL: ${ZKSYS_RPC_URL:-}
       DATABASE_PATH: /app/data/juntachain.sqlite
       ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
       SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL:-}

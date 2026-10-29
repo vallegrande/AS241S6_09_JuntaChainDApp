@@ -8,9 +8,12 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test:integration": "node tests/integration.mjs"
+    "test:integration": "node tests/integration.mjs",
+    "test:networks": "node --test tests/networks.test.mjs",
+    "start": "node --env-file-if-exists=.env scripts/start.mjs"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "@sveltejs/adapter-node": "^5.2.12",
     "@sveltejs/kit": "^2.37.0",
     "lucide-svelte": "^0.468.0",
@@ -27,5 +30,8 @@
     "svelte-check": "^4.3.1",
     "typescript": "^5.9.2",
     "vite": "^7.1.0"
+  },
+  "engines": {
+    "node": ">=24 <25"
   }
 }

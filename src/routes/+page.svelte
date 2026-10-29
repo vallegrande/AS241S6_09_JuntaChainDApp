@@ -34,7 +34,16 @@
     http,
     isAddress,
   } from "viem";
-  import { sepolia, hoodi } from "viem/chains";
+  import {
+    networks,
+    networkIds,
+    getNetwork,
+    findNetwork,
+    symbolFor,
+    nameFor,
+    explorerFor,
+    switchOrAddNetwork,
+  } from "$lib/networks";
   import QRCode from "qrcode";
   type Group = {
     id: string;
@@ -92,7 +101,7 @@
     amount = $state(""),
     hash = $state(""),
     status = $state(""),
-    sentChain = $state(sepolia.id as number),
+    sentChain = $state(11155111 as number),
     paymentGroup = $state(""),
     pendingPayment = $state<{ id: string; hash: string } | null>(null);
   let transactions = $state<Transaction[]>([]),
@@ -111,8 +120,8 @@
     invitation = $state<Invitation | null>(null),
     qr = $state(""),
     shareLink = $state("");
-  const chain = $derived(network === "560048" ? hoodi : sepolia),
-    supported = $derived(["11155111", "560048"].includes(network));
+  const chain = $derived(findNetwork(network) || networks[0]),
+    supported = $derived(networkIds.includes(network));
   const authenticated = $derived(
     !!address && sessionAddress === address.toLowerCase(),
   );
@@ -126,18 +135,20 @@
     ),
   );
   const volume = $derived(
-    myPayments.reduce((sum, p) => sum + Number(p.value), 0),
+    groups
+      .filter((g) => g.chainId === Number(network))
+      .flatMap((g) =>
+        g.payments.filter((p) => p.from === address.toLowerCase()),
+      )
+      .reduce((sum, p) => sum + Number(p.value), 0),
   );
   const displayName = $derived(name || "Mi cuenta");
   const cut = (value: string) =>
     value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "Sin conectar";
   const money = (value: string | number) =>
     Number(value).toLocaleString("es-PE", { maximumFractionDigits: 6 });
-  const chainName = (id: number) => (id === sepolia.id ? "Sepolia" : "Hoodi");
-  const explorer = (id: number) =>
-    id === sepolia.id
-      ? sepolia.blockExplorers.default.url
-      : hoodi.blockExplorers.default.url;
+  const chainName = nameFor;
+  const explorer = explorerFor;
   const stateOf = (g: Group) =>
     g.round >= g.capacity
       ? "Finalizada"
@@ -232,8 +243,7 @@
       pendingPayment = null;
       recipient = "";
       amount = "";
-      hash = "";
-      status = "";
+      // Preserve the last receipt; its explorer is bound to sentChain.
     }
     await loadSession();
     if (changed || !historySource) void loadHistory();
@@ -283,39 +293,20 @@
     }
   }
   async function switchNetwork(event: Event) {
+    if (busy) return;
     busy = true;
     notice = "";
+    const target = (event.target as HTMLSelectElement).value;
     try {
       if (!provider()) throw new Error("Conecta tu wallet primero.");
-      const next =
-        (event.target as HTMLSelectElement).value === "560048"
-          ? hoodi
-          : sepolia;
-      try {
-        await provider().request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: `0x${next.id.toString(16)}` }],
-        });
-      } catch (e) {
-        if ((e as { code: number }).code !== 4902) throw e;
-        await provider().request({
-          method: "wallet_addEthereumChain",
-          params: [
-            {
-              chainId: `0x${next.id.toString(16)}`,
-              chainName: next.name,
-              nativeCurrency: next.nativeCurrency,
-              rpcUrls: [next.rpcUrls.default.http[0]],
-              blockExplorerUrls: [next.blockExplorers.default.url],
-            },
-          ],
-        });
-      }
+      await switchOrAddNetwork(provider(), target);
       await refresh();
+      success = "Red conectada: " + nameFor(target);
     } catch (e) {
       fail(e);
     } finally {
       busy = false;
+      (event.target as HTMLSelectElement).value = network;
     }
   }
   async function createGroup() {
@@ -324,7 +315,8 @@
     try {
       if (!authenticated)
         throw new Error("Conecta y firma el inicio de sesión primero.");
-      if (!supported) throw new Error("Selecciona Sepolia o Hoodi en Wallet.");
+      if (!supported)
+        throw new Error("Selecciona Sepolia, Hoodi o zkSYS en Wallet.");
       const g = await api("groups", {
         name: title,
         amount: quota,
@@ -478,7 +470,7 @@
       if (groupId) pendingPayment = { id: groupId, hash: tx };
       status = "Transacción enviada. Esperando confirmación…";
       const receipt = await createPublicClient({
-        chain: sendNetwork === sepolia.id ? sepolia : hoodi,
+        chain: getNetwork(sendNetwork),
         transport: http(),
       }).waitForTransactionReceipt({ hash: tx, timeout: 180000 });
       if (receipt.status !== "success")
@@ -514,7 +506,7 @@
   }
   function exportHistory() {
     const rows = [
-      ["Fecha", "Hash", "Origen", "Destino", "ETH", "Estado"],
+      ["Fecha", "Hash", "Origen", "Destino", symbolFor(network), "Estado"],
       ...transactions.map((t) => [
         t.timestamp,
         t.hash,
@@ -552,7 +544,9 @@
       return;
     }
     const update = () => refresh().catch(fail);
-    refresh().catch(fail).finally(() => (checking = false));
+    refresh()
+      .catch(fail)
+      .finally(() => (checking = false));
     p.on("accountsChanged", update);
     p.on("chainChanged", update);
     return () => {
@@ -725,7 +719,8 @@
                     <div class="pool">
                       <div>
                         <small>APORTE POR RONDA</small><strong
-                          >{money(g.amount)} <span>ETH</span></strong
+                          >{money(g.amount)}
+                          <span>{symbolFor(g.chainId)}</span></strong
                         >
                       </div>
                       <span class="round"
@@ -770,8 +765,9 @@
               </div>
               <div class="savings">
                 <div>
-                  <span>TOTAL APORTADO</span><strong>{money(volume)} ETH</strong
-                  ><small>Aportes verificados en las redes admitidas.</small>
+                  <span>TOTAL APORTADO</span><strong
+                    >{money(volume)} {symbolFor(network)}</strong
+                  ><small>Aportes verificados en {chain.name}.</small>
                 </div>
                 <Sprout size={43} />
               </div>
@@ -809,9 +805,8 @@
                       >{new Date(t.timestamp).toLocaleString("es-PE")} · {t.status}</small
                     >
                   </div>
-                  <strong>{money(t.value)} ETH</strong><ExternalLink
-                    size={14}
-                  /></a
+                  <strong>{money(t.value)} {symbolFor(network)}</strong
+                  ><ExternalLink size={14} /></a
                 >{/each}{:else}<div class="empty-state compact">
                 <Clock size={25} />
                 <p>
@@ -843,12 +838,13 @@
             <div class="three-cols">
               <div class="white-card">
                 <small>APORTE POR MIEMBRO Y RONDA</small>
-                <h2>{money(group.amount)} ETH</h2>
+                <h2>{money(group.amount)} {symbolFor(group.chainId)}</h2>
               </div>
               <div class="white-card">
                 <small>RECEPCIÓN POR TURNO</small>
                 <h2>
-                  {money(Number(group.amount) * (group.capacity - 1))} ETH
+                  {money(Number(group.amount) * (group.capacity - 1))}
+                  {symbolFor(group.chainId)}
                 </h2>
                 <small>El beneficiario no se transfiere a sí mismo.</small>
               </div>
@@ -898,9 +894,9 @@
                         class="primary"
                         disabled={busy}
                         onclick={() => preparePayment(group)}
-                        >Aportar {money(group.amount)} ETH <ArrowUpRight
-                          size={17}
-                        /></button
+                        >Aportar {money(group.amount)}
+                        {symbolFor(group.chainId)}
+                        <ArrowUpRight size={17} /></button
                       >{/if}{/if}
                 </div>{/if}
             </div>
@@ -972,9 +968,8 @@
                     >{new Date(p.timestamp).toLocaleString("es-PE")}</small
                   >
                 </div>
-                <strong>{money(p.value)} ETH</strong><ExternalLink
-                  size={16}
-                /></a
+                <strong>{money(p.value)} {symbolFor(group.chainId)}</strong
+                ><ExternalLink size={16} /></a
               >{/each}
             <div class="info">
               <ShieldCheck size={22} />Cada miembro envía su cuota directamente
@@ -1009,7 +1004,9 @@
                     )}
                   </p>
                   <div class="pool">
-                    <strong>{money(g.amount)} <span>ETH</span></strong
+                    <strong
+                      >{money(g.amount)}
+                      <span>{symbolFor(g.chainId)}</span></strong
                     ><ChevronRight />
                   </div>
                   <div class="progress">
@@ -1054,7 +1051,7 @@
                   >SALDO DISPONIBLE · {supported
                     ? chain.name
                     : "RED NO COMPATIBLE"}</span
-                ><strong>{money(balance)} ETH</strong><small
+                ><strong>{money(balance)} {symbolFor(network)}</strong><small
                   >{address ||
                     "Conecta tu wallet para consultar tu saldo."}</small
                 ><button onclick={() => (address ? copy(address) : connect())}
@@ -1071,15 +1068,15 @@
                   value={network}
                   onchange={switchNetwork}
                   disabled={busy}
-                  ><option value="11155111">Sepolia · ETH</option><option
-                    value="560048">Hoodi · ETH</option
-                  >{#if !supported}<option value={network}
+                  >{#each networks as option}<option value={String(option.id)}
+                      >{option.name} · {option.nativeCurrency.symbol}</option
+                    >{/each}{#if !supported}<option value={network}
                       >Red no compatible ({network})</option
                     >{/if}</select
                 ><small
                   >Entorno académico en testnet. Las transacciones son reales en
-                  la red seleccionada; ETH de prueba no representa soles ni
-                  USDC.</small
+                  la red seleccionada; los tokens de prueba no representan soles
+                  ni USDC.</small
                 >
               </div>
             </div>
@@ -1103,7 +1100,7 @@
                 required
                 placeholder="0x…"
                 autocomplete="off"
-              /><label for="amount">Monto en ETH</label><input
+              /><label for="amount">Monto en {symbolFor(network)}</label><input
                 id="amount"
                 bind:value={amount}
                 readonly={!!paymentGroup}
@@ -1211,9 +1208,8 @@
                     >{new Date(t.timestamp).toLocaleString("es-PE")} · {t.status}</small
                   >
                 </div>
-                <strong>{money(t.value)} ETH</strong><ExternalLink
-                  size={15}
-                /></a
+                <strong>{money(t.value)} {symbolFor(network)}</strong
+                ><ExternalLink size={15} /></a
               >{/each}{#if historySource}<small class="spaced"
                 >{historySource === "Etherscan"
                   ? "Powered by Etherscan.io APIs"
@@ -1285,7 +1281,7 @@
             </div>
           </div>
           <div class="three-cols">
-            {#each [{ label: "Juntas en las que participas", value: String(groups.length) }, { label: "Juntas completadas", value: String(completed) }, { label: "Total aportado", value: `${money(volume)} ETH` }] as stat}<div
+            {#each [{ label: "Juntas en las que participas", value: String(groups.length) }, { label: "Juntas completadas", value: String(completed) }, { label: "Total aportado", value: `${money(volume)} ${symbolFor(network)}` }] as stat}<div
                 class="white-card"
               >
                 <small>{stat.label}</small>
@@ -1350,7 +1346,7 @@
           />
           <div class="two-cols">
             <div>
-              <label for="quota">Cuota en ETH</label><input
+              <label for="quota">Cuota en {symbolFor(network)}</label><input
                 id="quota"
                 bind:value={quota}
                 required
@@ -1375,8 +1371,8 @@
             ><option value={30}>30 días</option></select
           ><small
             >Red: {supported ? chain.name : "Cambia a una red compatible"} · Cada
-            beneficiario recibe {money(Number(quota || 0) * (capacity - 1))} ETH de
-            los demás miembros.</small
+            beneficiario recibe {money(Number(quota || 0) * (capacity - 1))}
+            {symbolFor(network)} de los demás miembros.</small
           ><button
             class="primary full spaced"
             disabled={busy || !authenticated || !supported}>Crear junta</button
@@ -1404,7 +1400,8 @@
             <p>
               {invitation.count} / {invitation.capacity} miembros · {chainName(
                 invitation.chainId,
-              )}<br />Cuota: {money(invitation.amount)} ETH · Cada {invitation.frequency}
+              )}<br />Cuota: {money(invitation.amount)}
+              {symbolFor(invitation.chainId)} · Cada {invitation.frequency}
               días
             </p>
             <p>
@@ -1448,7 +1445,7 @@
           <dt>Destinatario</dt>
           <dd>{recipient}</dd>
           <dt>Monto</dt>
-          <dd>{money(amount)} ETH</dd>
+          <dd>{money(amount)} {symbolFor(network)}</dd>
           <dt>Red</dt>
           <dd>{chain.name}</dd>
           <dt>Comisión</dt>
